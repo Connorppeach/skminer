@@ -1,0 +1,92 @@
+import:
+    java.math.BigInteger
+    java.lang.System
+    java.lang.Integer
+    java.lang.String
+    java.util.HexFormat
+    java.security.MessageDigest
+    java.util.Random
+    java.lang.StringBuilder 
+
+
+function randomHex(minlen: number) :: String:
+	set {_randomService} to new Random()
+	set {_sb} to new StringBuilder()
+	while {_sb}.length() < {_minlen}:
+		{_sb}.append(Integer.toHexString({_randomService}.nextInt()))
+	return {_sb}.toString()
+
+
+function swapEndianness(bytearray: object) :: object:
+	set {_tmp} to "%(size of ...{_bytearray})%"
+	set {_tmp} to (new BigInteger({_tmp}))
+	loop all the numbers between 0 and {_tmp}.divide(new BigInteger("2")).subtract(new BigInteger("1")).intValue():
+		set {_tmp2} to {_bytearray}[loop-value]
+		#System.out.println({_tmp2})
+		set {_bytearray}[loop-value] to {_bytearray}[{_tmp}.intValue()-(loop-value+1)]
+		set {_bytearray}[{_tmp}.intValue()-(loop-value+1)] to {_tmp2} 
+	set {_bytearray2} to new byte[{_tmp}.intValue()+1]
+	set {_bytearray2}[0] to 0
+	loop all the numbers between 0 and {_tmp}.subtract(new BigInteger("1")).intValue():
+		#System.out.println({_bytearray}[loop-value])
+		set {_bytearray2}[loop-value+1] to {_bytearray}[loop-value]
+		
+	return {_bytearray2}
+
+
+function mineCoin(prev_block: String, mrkl_root: String, starting_nonce: String) :: String:
+	set {p1} to "00010000000000000000000000000000"
+	set {_time} to new BigInteger("1392872245")
+	set {e} to 419520339
+	set {val} to "%{e}%"
+	set {_bits} to new BigInteger({val})
+	set {_exp} to {_bits}.shiftRight(24)
+	set {_mant} to {_bits}.and(new BigInteger("16777215"))
+	set {_cp1} to (new BigInteger("1").shiftLeft(({_exp}.subtract(new BigInteger("3"))).multiply(new BigInteger("8")).intValue())).multiply({_mant}).toString(16)
+	set {_cp2} to "%"0" repeated 64 - length of {_cp1} times%%{_cp1}%" 
+	set {_targetb} to new BigInteger({_cp2}, 16)
+	set {_p2} to HexFormat.of().parseHex({_prev_block})
+	set {_swapped} to swapEndianness({_p2})
+	set {_p2} to new BigInteger({_swapped}).toString(2)
+
+	set {_nonce} to HexFormat.of().parseHex({_starting_nonce})
+	set {_swapped} to swapEndianness({_nonce})
+	set {_nonce} to new BigInteger({_swapped}).intValue()
+
+	set {_p3} to HexFormat.of().parseHex({_mrkl_root})
+	set {_swapped} to swapEndianness({_p3})
+	set {_p3} to new BigInteger({_swapped}).toString(2)
+	set {_p4} to "%(new BigInteger({_time}.intValue().reverseBytes().toString()).toString(2))%"
+	set {_p4} to "%"0" repeated 32 - length of {_p4} times%%{_p4}%" 
+	set {_p5} to "%(new BigInteger({_bits}.intValue().reverseBytes().toString()).toString(2))%"
+	set {_p5} to "%"0" repeated 32 - length of {_p5} times%%{_p5}%" 
+	set {_preamble} to "%{p1}%%{_p2}%%{_p3}%%{_p4}%%{_p5}%"
+	
+	set {_target} to {_nonce} + 20000 # change the 20000 to change how many nonces to calculate
+	while {_nonce} < {_target}:
+		set {_p6} to "%{_nonce}%"
+		set {_p6} to (new BigInteger({_p6})).toByteArray()
+		set {_swapped} to swapEndianness({_p6})
+		set {_p6} to new BigInteger({_swapped}).toString(2) 
+		set {_fullmsg} to "%{_preamble}%%{_p6}%"
+		set {_mbytes} to new BigInteger({_fullmsg}, 2).toByteArray()
+		set {_digest} to MessageDigest.getInstance("SHA-256")
+		set {_hashedbytes} to {_digest}.digest({_digest}.digest({_mbytes}))
+		set {_hashedbytes} to swapEndianness({_hashedbytes})
+		set {_hexhash} to HexFormat.of().formatHex({_hashedbytes})
+		if mod({_nonce}, 1000) = 0:
+			System.out.println({_hexhash})
+		if new BigInteger({_hashedbytes}).compareTo({_targetb}) < 0:
+			broadcast "found a winning nonce"
+			return {_hexhash}
+		set {_nonce} to {_nonce} + 1 
+			
+
+command /mine:
+		
+	trigger:
+		# little fun fact, getwork requests can be emulated with random data
+		set {data} to randomHex(140) # for real mining, change this line to set the data to the hex value of your getwork request
+				
+		mineCoin(substring of {data} between 0 and 64, substring of {data} between 65 and 128, substring of {data} between 129 and 136)
+		
